@@ -2,3 +2,4 @@
 icons/_wrap.html
 node_modules/
 *.log
+.claude/
