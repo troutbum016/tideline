@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#C65A4A"/>
+  <g fill="#F7F2EC">
+    <!-- body -->
+    <ellipse cx="268" cy="262" rx="126" ry="74"/>
+    <!-- tail -->
+    <path d="M380 262 L470 200 L470 324 Z"/>
+  </g>
+  <!-- eye -->
+  <circle cx="196" cy="244" r="13" fill="#C65A4A"/>
+  <!-- water line -->
+  <path d="M70 360 q40 -20 80 0 t80 0 t80 0 t80 0" fill="none" stroke="#F7F2EC" stroke-width="10" stroke-linecap="round" opacity="0.55"/>
+</svg>

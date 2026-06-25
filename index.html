@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Tideline</title>
+  <meta name="description" content="A minimalist journal for fly & saltwater fishing." />
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#F7F2EC" />
+
+  <!-- iOS home-screen app -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Tideline" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" href="icons/icon-192.png" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="logo">🎣</span>
+      <h1>Tideline</h1>
+      <p class="tagline">fly &amp; saltwater journal</p>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-view="log">Log</button>
+      <button class="tab" data-view="journal">Journal</button>
+      <button class="tab" data-view="insights">Insights</button>
+      <button class="tab" data-view="pond">Pond</button>
+      <button class="tab" data-view="backup">Backup</button>
+    </nav>
+  </header>
+
+  <main id="app"></main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('service-worker.js').catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>
