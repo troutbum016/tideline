@@ -1,6 +1,6 @@
 /* Tideline service worker — offline app shell.
    Bump CACHE when any cached asset changes to force an update. */
-const CACHE = 'tideline-v1';
+const CACHE = 'tideline-v2';
 const ASSETS = [
   './',
   './index.html',

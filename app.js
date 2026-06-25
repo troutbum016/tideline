@@ -75,25 +75,25 @@
 
   function flyRow(f = {}) {
     return `<div class="repeat-row flies-row">
-      <input class="r-name" placeholder="Fly / lure" value="${esc(f.name)}" />
-      <input class="r-size" placeholder="Size / color" value="${esc(f.size)}" />
-      <button type="button" class="rm" aria-label="remove">&times;</button>
+      <input class="r-name" aria-label="Fly or lure name" placeholder="Fly / lure" value="${esc(f.name)}" />
+      <input class="r-size" aria-label="Fly size or color" placeholder="Size / color" value="${esc(f.size)}" />
+      <button type="button" class="rm" aria-label="Remove fly">&times;</button>
     </div>`;
   }
 
   function catchBlock(c = {}) {
     return `<div class="catch-block">
       <div class="repeat-row catch-row">
-        <input class="c-species" placeholder="Species" value="${esc(c.species)}" />
-        <input class="c-length" type="number" inputmode="decimal" step="0.1" placeholder="Length (in)" value="${esc(c.length)}" />
-        <input class="c-weight" type="number" inputmode="decimal" step="0.1" placeholder="Weight (lb)" value="${esc(c.weight)}" />
+        <input class="c-species" aria-label="Species" placeholder="Species" value="${esc(c.species)}" />
+        <input class="c-length" aria-label="Length in inches" type="number" inputmode="decimal" step="0.1" placeholder="Length (in)" value="${esc(c.length)}" />
+        <input class="c-weight" aria-label="Weight in pounds" type="number" inputmode="decimal" step="0.1" placeholder="Weight (lb)" value="${esc(c.weight)}" />
       </div>
       <div class="catch-extra">
         <label class="field" style="flex:1">
-          <input class="c-hit" list="hit-options" placeholder="Caught on (fly / lure)" value="${esc(c.hit)}" />
+          <input class="c-hit" aria-label="Caught on (fly or lure)" list="hit-options" placeholder="Caught on (fly / lure)" value="${esc(c.hit)}" />
         </label>
-        <span class="inline-check"><input type="checkbox" class="c-released" ${c.released ? 'checked' : ''}/> released</span>
-        <button type="button" class="rm" aria-label="remove">&times;</button>
+        <label class="inline-check"><input type="checkbox" class="c-released" ${c.released ? 'checked' : ''}/> released</label>
+        <button type="button" class="rm" aria-label="Remove catch">&times;</button>
       </div>
     </div>`;
   }
@@ -142,9 +142,9 @@
       <form id="session-form">
         <div class="panel">
           <h3>Basics</h3>
-          <div class="seg" id="type-seg" style="margin-bottom:16px">
-            <button type="button" data-type="fly" class="${s.type === 'fly' ? 'active' : ''}">Fly</button>
-            <button type="button" data-type="saltwater" class="${s.type === 'saltwater' ? 'active' : ''}">Saltwater</button>
+          <div class="seg" id="type-seg" role="group" aria-label="Session type" style="margin-bottom:16px">
+            <button type="button" data-type="fly" class="${s.type === 'fly' ? 'active' : ''}" aria-pressed="${s.type === 'fly'}">Fly</button>
+            <button type="button" data-type="saltwater" class="${s.type === 'saltwater' ? 'active' : ''}" aria-pressed="${s.type === 'saltwater'}">Saltwater</button>
           </div>
           <div class="grid cols-3">
             <label class="field">Date<input id="f-date" type="date" value="${esc(s.date)}" required /></label>
@@ -191,7 +191,7 @@
         <div class="panel">
           <h3>Reflection</h3>
           <p class="hint" style="margin:-8px 0 12px">What worked, what you'd change, how it felt.</p>
-          <textarea id="f-reflection" placeholder="Fish keyed on emergers in the riffle. Waited too long to switch — next time change flies after 15 min of refusals...">${esc(s.reflection)}</textarea>
+          <textarea id="f-reflection" placeholder="Fish keyed on emergers in the riffle. Waited too long to switch — next time change flies after 15 min of refusals…">${esc(s.reflection)}</textarea>
         </div>
 
         <div class="btn-row">
@@ -219,7 +219,11 @@
       const btn = e.target.closest('button[data-type]');
       if (!btn) return;
       formType = btn.dataset.type;
-      document.querySelectorAll('#type-seg button').forEach((b) => b.classList.toggle('active', b === btn));
+      document.querySelectorAll('#type-seg button').forEach((b) => {
+        const on = b === btn;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-pressed', String(on));
+      });
       document.getElementById('rig-fields').innerHTML = rigFields(formType, readRig());
       document.getElementById('weather-extra').innerHTML = weatherExtra(formType, readWeatherExtra());
       document.getElementById('flies-title').textContent = formType === 'fly' ? 'Flies' : 'Lures / bait';
@@ -543,7 +547,7 @@
       <div class="panel">
         <h3>Import</h3>
         <p class="hint" style="margin-top:-8px">Load a previously exported JSON file. This <strong>replaces</strong> your current data.</p>
-        <input type="file" id="import-file" accept="application/json" style="margin-top:8px" />
+        <input type="file" id="import-file" aria-label="Choose a Tideline JSON backup to import" accept="application/json" style="margin-top:8px" />
       </div>
       <div class="panel">
         <h3>Danger zone</h3>

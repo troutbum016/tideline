@@ -1,34 +1,82 @@
 :root {
-  /* Warm light palette */
-  --primary: #C65A4A;
-  --primary-dark: #AE4B3D;
-  --bg: #F7F2EC;
+  color-scheme: light;
+
+  /* "Tide table & field ledger" palette.
+     Tide-teal is the single brand accent; terracotta is demoted to a
+     semantic signal for fly sessions only. Ink shifted warm→cool slate. */
+  --primary: #2E6E73;       /* tide-teal — the accent (buttons, active tab, focus, bars) */
+  --primary-dark: #245A5E;
+  --fly: #C65A4A;           /* fly-session signal only (was the old --primary) */
+  --fly-dark: #AE4B3D;
+  --bg: #F4EFE6;            /* paper, a touch cooler than before */
   --surface: #FFFFFF;
-  --secondary: #EAE3DB;
-  --light-secondary: #F1E8E0;
-  --highlight: #F8DCCF;
-  --line: #E5E0DA;
-  --text: #6F655E;
-  --text-strong: #574E48;
-  --muted: #A99E94;
+  --secondary: #E6E2D9;
+  --light-secondary: #EDE8DF;
+  --highlight: #F8DCCF;     /* warm wash behind fly badges */
+  --tide-wash: #DDEAEA;     /* cool wash behind salt badges */
+  --line: #E2DDD4;
+  --text: #586A6B;          /* body ink — cool */
+  --text-strong: #2B3A3F;   /* deep slate-teal */
+  --muted: #95A09B;         /* cool grey-green */
+
+  /* Two voices: a serif journal voice, a mono measured voice. All system. */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: ui-serif, Georgia, "Times New Roman", serif;
+  --font-data: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   --radius: 12px;
   --maxw: 720px;
+
+  --ring: 0 0 0 3px rgba(46, 110, 115, 0.30);
 }
 
 * { box-sizing: border-box; }
+
+html { -webkit-tap-highlight-color: transparent; }
+button, a, .tab, input, select, textarea { touch-action: manipulation; }
+
+/* Shared visible keyboard focus — same teal as the brand accent. */
+:focus-visible { outline: none; }
+.tab:focus-visible,
+.btn:focus-visible,
+.seg button:focus-visible,
+.add-link:focus-visible,
+.rm:focus-visible,
+.inline-check input:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+  border-radius: 8px;
+}
 
 html, body {
   margin: 0;
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-ui);
   font-size: 16px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
 }
+
+/* ---------- Skip link ---------- */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  background: var(--primary);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-150%);
+  transition: transform 0.15s;
+}
+.skip-link:focus-visible { transform: translateY(0); outline: none; box-shadow: var(--ring); }
 
 /* ---------- Header ---------- */
 .app-header {
@@ -50,12 +98,19 @@ html, body {
 .logo { display: none; }
 .brand h1 {
   margin: 0;
-  font-size: 19px;
+  font-family: var(--font-display);
+  font-size: 22px;
   font-weight: 600;
-  letter-spacing: 0.2px;
+  letter-spacing: 0.1px;
   color: var(--text-strong);
 }
-.tagline { margin: 0; color: var(--muted); font-size: 13px; }
+.tagline {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--font-data);
+  letter-spacing: 0.02em;
+}
 
 .tabs {
   max-width: var(--maxw);
@@ -68,27 +123,52 @@ html, body {
 }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
+  position: relative;
   background: none;
   border: none;
   color: var(--muted);
-  padding: 8px 12px 12px;
+  padding: 8px 12px 14px;
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
-  border-bottom: 2px solid transparent;
   white-space: nowrap;
   transition: color 0.15s;
 }
 .tab:hover { color: var(--text); }
-.tab.active { color: var(--text-strong); border-bottom-color: var(--primary); }
+.tab.active { color: var(--text-strong); }
+/* Signature: the "tideline" — a sounding mark under the active tab:
+   a teal tide rule with a small diamond notch centered on it, like a
+   depth mark on a chart. */
+.tab.active::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+.tab.active::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 5px;
+  height: 5px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--primary);
+  border-radius: 1px;
+}
 
 /* ---------- Layout ---------- */
 main {
   max-width: var(--maxw);
   margin: 0 auto;
   padding: 26px clamp(16px, 5vw, 28px) calc(96px + env(safe-area-inset-bottom));
+  scroll-margin-top: 120px;
 }
-.view-title { font-size: 22px; font-weight: 600; margin: 0 0 4px; color: var(--text-strong); letter-spacing: 0.2px; }
+.view-title { font-family: var(--font-display); font-size: 27px; font-weight: 600; margin: 0 0 4px; color: var(--text-strong); letter-spacing: 0; text-wrap: balance; }
 .view-sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
 
 /* ---------- Cards / sections ---------- */
@@ -100,12 +180,26 @@ main {
   margin-bottom: 16px;
 }
 .panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 0 16px;
-  font-size: 12px;
+  font-family: var(--font-data);
+  font-size: 11px;
   color: var(--muted);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   font-weight: 600;
+}
+/* Eyebrow tick — a short tide mark leading each section label. */
+.panel h3::before {
+  content: "";
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--primary);
+  flex: none;
+  opacity: 0.55;
 }
 
 .grid { display: grid; gap: 14px; }
@@ -133,7 +227,7 @@ input::placeholder, textarea::placeholder { color: #C2B8AE; }
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(198, 90, 74, 0.12);
+  box-shadow: var(--ring);
 }
 textarea { resize: vertical; min-height: 96px; line-height: 1.6; }
 select {
@@ -177,8 +271,8 @@ select {
 .btn:active { opacity: 0.9; }
 .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
 .btn.ghost:hover { background: var(--light-secondary); }
-.btn.warn { background: transparent; border: 1px solid var(--line); color: var(--primary); }
-.btn.warn:hover { border-color: var(--primary); }
+.btn.warn { background: transparent; border: 1px solid var(--line); color: var(--fly); }
+.btn.warn:hover { border-color: var(--fly); }
 .btn.sm { padding: 8px 12px; font-size: 13px; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px; }
 
@@ -219,11 +313,11 @@ select {
   margin-bottom: 14px;
 }
 .entry-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.entry-title { font-size: 17px; font-weight: 600; margin: 0; color: var(--text-strong); }
+.entry-title { font-family: var(--font-display); font-size: 18px; font-weight: 600; margin: 0; color: var(--text-strong); text-wrap: balance; }
 .entry-meta { color: var(--muted); font-size: 13px; margin: 3px 0 0; }
 .badge { display: inline-block; padding: 3px 9px; border-radius: 6px; font-size: 11px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; }
-.badge.fly { background: var(--highlight); color: var(--primary-dark); }
-.badge.salt { background: var(--secondary); color: var(--text); }
+.badge.fly { background: var(--highlight); color: var(--fly-dark); }
+.badge.salt { background: var(--tide-wash); color: var(--primary-dark); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .chip { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font-size: 12px; color: var(--text); }
 .chip.catch { background: var(--light-secondary); border-color: var(--line); color: var(--text-strong); }
@@ -240,14 +334,14 @@ select {
 /* ---------- Stats ---------- */
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .stat { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
-.stat .num { font-size: 26px; font-weight: 600; color: var(--text-strong); letter-spacing: -0.01em; }
+.stat .num { font-family: var(--font-data); font-size: 26px; font-weight: 600; color: var(--text-strong); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .stat .lbl { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
 .bar-list { display: flex; flex-direction: column; gap: 12px; }
 .bar-item { display: grid; grid-template-columns: 120px 1fr 40px; gap: 10px; align-items: center; font-size: 13px; }
-.bar-track { background: var(--secondary); border-radius: 999px; height: 8px; overflow: hidden; }
-.bar-fill { height: 100%; background: var(--primary); border-radius: 999px; }
-.bar-val { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar-track { display: block; background: var(--secondary); border-radius: 999px; height: 8px; overflow: hidden; }
+.bar-fill { display: block; height: 100%; background: var(--primary); border-radius: 999px; }
+.bar-val { text-align: right; color: var(--muted); font-family: var(--font-data); font-variant-numeric: tabular-nums; }
 .bar-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 
 .working { display: flex; flex-direction: column; gap: 12px; }
@@ -257,7 +351,7 @@ select {
 
 /* ---------- Reflective pond ---------- */
 .pond { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; margin-bottom: 16px; }
-.pond-prompt { color: var(--text-strong); font-size: 16px; margin: 0 0 12px; font-weight: 500; }
+.pond-prompt { font-family: var(--font-display); color: var(--text-strong); font-size: 19px; line-height: 1.45; margin: 0 0 12px; font-weight: 500; text-wrap: pretty; }
 .reflection-card { border-top: 1px solid var(--line); padding: 18px 0; }
 .reflection-card:first-of-type { border-top: none; }
 .reflection-date { color: var(--muted); font-size: 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
@@ -290,3 +384,13 @@ select {
   animation: pop 0.2s ease;
 }
 @keyframes pop { from { transform: translateX(-50%) translateY(6px); opacity: 0; } }
+
+/* Honor reduced-motion: drop transitions and the toast entrance animation. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
