@@ -7,6 +7,11 @@ and catches; reflect on each session; and let the **Insights** surface what's ac
 - **Installable PWA** — add it to your phone's home screen and use it offline on the water.
 - **Effectiveness, not just frequency** — catches are tagged with the fly/lure that hit, so Insights
   rank patterns by fish landed, plus best spot, time of day, tide, and pressure.
+- **Fast to log** — past locations, flies, species, and rigs come back as suggestions while you type;
+  "Log again" starts a new session with your last spot and setup; the moon phase fills itself in.
+- **One-tap conditions** — when you have signal, "Use current conditions" grabs weather, wind,
+  pressure trend, and the nearest USGS gauge's streamflow from your location (keyless public APIs,
+  nothing is required — everything still works offline).
 
 ## Run locally
 

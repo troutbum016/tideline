@@ -8,18 +8,57 @@
   const app = document.getElementById('app');
 
   /* ---------- storage ---------- */
+  // Fill in any missing keys so old backups and stored data stay compatible
+  // as the model grows (e.g. `coords` added later).
+  function normalizeSession(raw) {
+    const r = raw || {};
+    return {
+      id: r.id || uid(),
+      type: r.type === 'saltwater' ? 'saltwater' : 'fly',
+      date: r.date || '', time: r.time || '', hours: r.hours || '',
+      location: r.location || '', water: r.water || '',
+      weather: { condition: '', airTemp: '', waterTemp: '', wind: '', pressure: '', flow: '', hatch: '', tide: '', moon: '', ...(r.weather || {}) },
+      rig: r.rig || {},
+      flies: Array.isArray(r.flies) ? r.flies : [],
+      catches: Array.isArray(r.catches) ? r.catches : [],
+      reflection: r.reflection || '',
+      coords: r.coords && r.coords.lat != null ? { lat: r.coords.lat, lon: r.coords.lon } : null,
+    };
+  }
+
   const load = () => {
-    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
-    catch { return []; }
+    try {
+      const data = JSON.parse(localStorage.getItem(STORE_KEY));
+      return Array.isArray(data) ? data.map(normalizeSession) : [];
+    } catch { return []; }
   };
   const save = (s) => localStorage.setItem(STORE_KEY, JSON.stringify(s));
-  let sessions = load();
 
   /* ---------- helpers ---------- */
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const num = (v) => { const n = parseFloat(v); return isNaN(n) ? 0 : n; };
+
+  const nowRounded5 = () => {
+    const d = new Date();
+    d.setMinutes(Math.round(d.getMinutes() / 5) * 5, 0, 0);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  };
+
+  // Moon phase from the date alone — pure math, works offline.
+  // Fraction of the synodic month elapsed since a known new moon (2000-01-06 18:14 UTC).
+  const SYNODIC = 29.53058867;
+  function moonPhase(dateStr) {
+    if (!dateStr) return '';
+    const t = new Date(dateStr + 'T12:00:00');
+    if (isNaN(t)) return '';
+    const days = (t - Date.UTC(2000, 0, 6, 18, 14)) / 86400000;
+    const f = (((days % SYNODIC) + SYNODIC) % SYNODIC) / SYNODIC;
+    if (f < 0.07 || f > 0.93) return 'New';
+    if (f >= 0.43 && f <= 0.57) return 'Full';
+    return f < 0.5 ? 'Waxing' : 'Waning';
+  }
 
   const TIME_BUCKETS = [
     { key: 'Dawn', from: 4, to: 7 },
@@ -55,27 +94,63 @@
   const PRESSURES = ['', 'Rising', 'Steady', 'Falling'];
 
   /* ---------- state ---------- */
+  let sessions = load();
   let view = 'log';
   let editingId = null;
   let formType = 'fly';
   let journalQuery = '';
   let journalFilter = 'all';
+  let autoMoon = '';      // last auto-suggested moon phase; '' once the user picks one
+  let formCoords = null;  // {lat, lon} captured by "Use current conditions"
 
   /* ============================================================
      LOG / EDIT FORM
   ============================================================ */
   function blankSession() {
     return {
-      id: null, type: 'fly', date: new Date().toISOString().slice(0, 10), time: '', hours: '',
+      id: null, type: 'fly', date: new Date().toISOString().slice(0, 10), time: nowRounded5(), hours: '',
       location: '', water: '',
       weather: { condition: '', airTemp: '', waterTemp: '', wind: '', pressure: '', flow: '', hatch: '', tide: '', moon: '' },
-      rig: {}, flies: [], catches: [], reflection: '',
+      rig: {}, flies: [], catches: [], reflection: '', coords: null,
     };
   }
 
+  // A fresh session carrying over spot + gear from a previous one —
+  // anglers revisit the same water with the same setup.
+  function prefillFrom(s) {
+    return {
+      ...blankSession(),
+      type: s.type, location: s.location, water: s.water,
+      rig: { ...s.rig }, flies: s.flies.map((f) => ({ ...f })),
+    };
+  }
+
+  /* ---------- derived suggestions ---------- */
+  // Datalist suggestions come straight from past sessions (newest first) —
+  // nothing extra to store or keep in sync.
+  function buildSuggestions() {
+    const S = {
+      locations: new Set(), waters: new Set(), species: new Set(), flies: new Set(),
+      rods: new Set(), reels: new Set(), lines: new Set(), leaders: new Set(),
+      methods: new Set(), hatches: new Set(),
+    };
+    const add = (set, v) => { v = (v || '').trim(); if (v && set.size < 20) set.add(v); };
+    sessions.forEach((s) => {
+      add(S.locations, s.location); add(S.waters, s.water);
+      add(S.rods, s.rig.rod); add(S.reels, s.rig.reel); add(S.lines, s.rig.line);
+      add(S.leaders, s.rig.leader); add(S.methods, s.rig.method); add(S.hatches, s.weather.hatch);
+      s.flies.forEach((f) => add(S.flies, f.name));
+      s.catches.forEach((c) => add(S.species, c.species));
+    });
+    return Object.fromEntries(Object.entries(S).map(([k, v]) => [k, [...v]]));
+  }
+
+  const datalistHTML = (id, values) =>
+    `<datalist id="${id}">${values.map((v) => `<option value="${esc(v)}"></option>`).join('')}</datalist>`;
+
   function flyRow(f = {}) {
     return `<div class="repeat-row flies-row">
-      <input class="r-name" aria-label="Fly or lure name" placeholder="Fly / lure" value="${esc(f.name)}" />
+      <input class="r-name" aria-label="Fly or lure name" list="dl-fly" placeholder="Fly / lure" value="${esc(f.name)}" />
       <input class="r-size" aria-label="Fly size or color" placeholder="Size / color" value="${esc(f.size)}" />
       <button type="button" class="rm" aria-label="Remove fly">&times;</button>
     </div>`;
@@ -84,7 +159,7 @@
   function catchBlock(c = {}) {
     return `<div class="catch-block">
       <div class="repeat-row catch-row">
-        <input class="c-species" aria-label="Species" placeholder="Species" value="${esc(c.species)}" />
+        <input class="c-species" aria-label="Species" list="dl-species" placeholder="Species" value="${esc(c.species)}" />
         <input class="c-length" aria-label="Length in inches" type="number" inputmode="decimal" step="0.1" placeholder="Length (in)" value="${esc(c.length)}" />
         <input class="c-weight" aria-label="Weight in pounds" type="number" inputmode="decimal" step="0.1" placeholder="Weight (lb)" value="${esc(c.weight)}" />
       </div>
@@ -101,64 +176,93 @@
   function rigFields(type, rig = {}) {
     if (type === 'fly') {
       return `<div class="grid cols-3">
-          <label class="field">Rod weight<input id="rig-rod" placeholder="5wt" value="${esc(rig.rod)}" /></label>
-          <label class="field">Line<input id="rig-line" placeholder="WF floating" value="${esc(rig.line)}" /></label>
-          <label class="field">Leader / Tippet<input id="rig-leader" placeholder="9ft 5X" value="${esc(rig.leader)}" /></label>
+          <label class="field">Rod weight<input id="rig-rod" list="dl-rod" placeholder="5wt" value="${esc(rig.rod)}" /></label>
+          <label class="field">Line<input id="rig-line" list="dl-line" placeholder="WF floating" value="${esc(rig.line)}" /></label>
+          <label class="field">Leader / Tippet<input id="rig-leader" list="dl-leader" placeholder="9ft 5X" value="${esc(rig.leader)}" /></label>
         </div>
         <label class="field" style="margin-top:14px">Presentation
-          <input id="rig-method" placeholder="Dry / nymph / streamer / dropper" value="${esc(rig.method)}" /></label>`;
+          <input id="rig-method" list="dl-method" placeholder="Dry / nymph / streamer / dropper" value="${esc(rig.method)}" /></label>`;
     }
     return `<div class="grid cols-3">
-        <label class="field">Rod<input id="rig-rod" placeholder="7ft MH" value="${esc(rig.rod)}" /></label>
-        <label class="field">Reel<input id="rig-reel" placeholder="4000 spin" value="${esc(rig.reel)}" /></label>
-        <label class="field">Line<input id="rig-line" placeholder="20lb braid" value="${esc(rig.line)}" /></label>
+        <label class="field">Rod<input id="rig-rod" list="dl-rod" placeholder="7ft MH" value="${esc(rig.rod)}" /></label>
+        <label class="field">Reel<input id="rig-reel" list="dl-reel" placeholder="4000 spin" value="${esc(rig.reel)}" /></label>
+        <label class="field">Line<input id="rig-line" list="dl-line" placeholder="20lb braid" value="${esc(rig.line)}" /></label>
       </div>
       <label class="field" style="margin-top:14px">Rig / setup
-        <input id="rig-method" placeholder="Carolina rig / popping cork / jig" value="${esc(rig.method)}" /></label>`;
+        <input id="rig-method" list="dl-method" placeholder="Carolina rig / popping cork / jig" value="${esc(rig.method)}" /></label>`;
   }
 
-  function weatherExtra(type, w = {}) {
+  function weatherExtra(type, w = {}, date = '') {
     if (type === 'fly') {
       return `<div class="grid cols-2" style="margin-top:14px">
         <label class="field">Flow (CFS)<input id="w-flow" type="number" inputmode="numeric" placeholder="250" value="${esc(w.flow)}" /></label>
-        <label class="field">Hatch / bait<input id="w-hatch" placeholder="BWO #18 emergers" value="${esc(w.hatch)}" /></label>
-      </div>`;
+        <label class="field">Hatch / bait<input id="w-hatch" list="dl-hatch" placeholder="BWO #18 emergers" value="${esc(w.hatch)}" /></label>
+      </div>
+      <p class="hint" id="flow-hint" hidden></p>`;
     }
+    // Preselect the computed moon phase when none is set; a manual pick sticks.
+    let moon = w.moon;
+    if (moon) { autoMoon = ''; }
+    else { autoMoon = moonPhase(date || new Date().toISOString().slice(0, 10)); moon = autoMoon; }
     return `<div class="grid cols-2" style="margin-top:14px">
       <label class="field">Tide<select id="w-tide">${TIDES.map((t) => `<option ${w.tide === t ? 'selected' : ''}>${t}</option>`).join('')}</select></label>
-      <label class="field">Moon phase<select id="w-moon">${MOONS.map((m) => `<option ${w.moon === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
+      <label class="field">Moon phase<select id="w-moon">${MOONS.map((m) => `<option ${moon === m ? 'selected' : ''}>${m}</option>`).join('')}</select></label>
     </div>`;
   }
 
   function renderLog(existing) {
     const s = existing || blankSession();
     formType = s.type;
+    formCoords = s.coords || null;
     const fliesTitle = () => (formType === 'fly' ? 'Flies' : 'Lures / bait');
+
+    const sug = buildSuggestions();
+    const datalists = [
+      ['dl-location', sug.locations], ['dl-water', sug.waters], ['dl-species', sug.species],
+      ['dl-fly', sug.flies], ['dl-rod', sug.rods], ['dl-reel', sug.reels], ['dl-line', sug.lines],
+      ['dl-leader', sug.leaders], ['dl-method', sug.methods], ['dl-hatch', sug.hatches],
+    ].map(([id, v]) => datalistHTML(id, v)).join('');
+
+    // Collapsed-panel summaries + open state, computed once at render.
+    const w = s.weather;
+    const sum = (...parts) => parts.filter(Boolean).join(' · ');
+    const wxSum = sum(w.airTemp && `${w.airTemp}°F`, w.condition, w.wind, w.pressure,
+      w.waterTemp && `${w.waterTemp}°F water`, w.flow && `${w.flow} cfs`, w.hatch,
+      w.tide, w.moon && `${w.moon} moon`);
+    const rigSum = sum(s.rig.rod, s.rig.method, s.rig.line);
+    const flyCount = s.flies.filter((f) => f.name).length;
+    const fliesSum = flyCount ? `${flyCount} pattern${flyCount === 1 ? '' : 's'}` : '';
+    const hasWx = Object.values(w).some((v) => v);
+    const hasRig = Object.values(s.rig || {}).some((v) => v);
 
     app.innerHTML = `
       <h2 class="view-title">${editingId ? 'Edit session' : 'Log a session'}</h2>
       <p class="view-sub">Capture conditions while they're fresh — the patterns surface later.</p>
 
       <form id="session-form">
+        ${datalists}
         <div class="panel">
           <h3>Basics</h3>
           <div class="seg" id="type-seg" role="group" aria-label="Session type" style="margin-bottom:16px">
             <button type="button" data-type="fly" class="${s.type === 'fly' ? 'active' : ''}" aria-pressed="${s.type === 'fly'}">Fly</button>
             <button type="button" data-type="saltwater" class="${s.type === 'saltwater' ? 'active' : ''}" aria-pressed="${s.type === 'saltwater'}">Saltwater</button>
           </div>
+          ${!editingId && !existing && sessions.length ? '<button type="button" class="add-link" id="repeat-last" style="display:block;margin:-8px 0 12px">↺ Repeat last setup</button>' : ''}
           <div class="grid cols-3">
             <label class="field">Date<input id="f-date" type="date" value="${esc(s.date)}" required /></label>
             <label class="field">Start time<input id="f-time" type="time" value="${esc(s.time)}" /></label>
             <label class="field">Hours fished<input id="f-hours" type="number" inputmode="decimal" step="0.5" placeholder="3" value="${esc(s.hours)}" /></label>
           </div>
           <div class="grid cols-2" style="margin-top:14px">
-            <label class="field">Location<input id="f-location" placeholder="Madison River — Raynolds Pass" value="${esc(s.location)}" /></label>
-            <label class="field">Water body<input id="f-water" placeholder="River / flat / surf / reef" value="${esc(s.water)}" /></label>
+            <label class="field">Location<input id="f-location" list="dl-location" placeholder="Madison River — Raynolds Pass" value="${esc(s.location)}" /></label>
+            <label class="field">Water body<input id="f-water" list="dl-water" placeholder="River / flat / surf / reef" value="${esc(s.water)}" /></label>
           </div>
         </div>
 
-        <div class="panel">
-          <h3>Weather &amp; water</h3>
+        <details class="panel" ${hasWx ? 'open' : ''}>
+          <summary><h3>Weather &amp; water</h3><span class="panel-sum">${esc(wxSum)}</span></summary>
+          <button type="button" class="btn ghost sm" id="wx-fill">Use current conditions</button>
+          <p class="hint" style="margin:8px 0 16px">Fills weather from your location — online only, everything stays editable.</p>
           <div class="grid cols-3">
             <label class="field">Conditions<input id="w-condition" placeholder="Overcast" value="${esc(s.weather.condition)}" /></label>
             <label class="field">Air °F<input id="w-air" type="number" inputmode="numeric" placeholder="62" value="${esc(s.weather.airTemp)}" /></label>
@@ -166,33 +270,33 @@
             <label class="field">Wind<input id="w-wind" placeholder="SW 8mph" value="${esc(s.weather.wind)}" /></label>
             <label class="field">Pressure<select id="w-pressure">${PRESSURES.map((p) => `<option ${s.weather.pressure === p ? 'selected' : ''}>${p}</option>`).join('')}</select></label>
           </div>
-          <div id="weather-extra">${weatherExtra(s.type, s.weather)}</div>
-        </div>
+          <div id="weather-extra">${weatherExtra(s.type, s.weather, s.date)}</div>
+        </details>
 
-        <div class="panel">
-          <h3>Tackle &amp; rig</h3>
+        <details class="panel" ${hasRig ? 'open' : ''}>
+          <summary><h3>Tackle &amp; rig</h3><span class="panel-sum">${esc(rigSum)}</span></summary>
           <div id="rig-fields">${rigFields(s.type, s.rig)}</div>
-        </div>
+        </details>
 
-        <div class="panel">
-          <h3 id="flies-title">${fliesTitle()}</h3>
+        <details class="panel" ${flyCount ? 'open' : ''}>
+          <summary><h3 id="flies-title">${fliesTitle()}</h3><span class="panel-sum">${esc(fliesSum)}</span></summary>
           <div id="flies-list">${(s.flies.length ? s.flies : [{}]).map(flyRow).join('')}</div>
           <button type="button" class="add-link" id="add-fly">+ add another</button>
-        </div>
+        </details>
 
-        <div class="panel">
-          <h3>Catch log</h3>
+        <details class="panel" open>
+          <summary><h3>Catch log</h3><span class="panel-sum">${s.catches.length ? `${s.catches.length} fish` : ''}</span></summary>
           <datalist id="hit-options"></datalist>
           <div id="catch-list">${s.catches.map(catchBlock).join('')}</div>
           <button type="button" class="add-link" id="add-catch">+ add a catch</button>
           <p class="hint">No fish? Leave it empty — skunked days teach too. Tag what each fish hit to learn your best patterns.</p>
-        </div>
+        </details>
 
-        <div class="panel">
-          <h3>Reflection</h3>
+        <details class="panel" open>
+          <summary><h3>Reflection</h3><span class="panel-sum"></span></summary>
           <p class="hint" style="margin:-8px 0 12px">What worked, what you'd change, how it felt.</p>
           <textarea id="f-reflection" placeholder="Fish keyed on emergers in the riffle. Waited too long to switch — next time change flies after 15 min of refusals…">${esc(s.reflection)}</textarea>
-        </div>
+        </details>
 
         <div class="btn-row">
           <button type="submit" class="btn">${editingId ? 'Save changes' : 'Save session'}</button>
@@ -207,9 +311,11 @@
   function refreshHitOptions() {
     const dl = document.getElementById('hit-options');
     if (!dl) return;
+    // Today's flies first, then patterns from past sessions.
     const names = [...document.querySelectorAll('#flies-list .r-name')]
       .map((i) => i.value.trim()).filter(Boolean);
-    dl.innerHTML = [...new Set(names)].map((n) => `<option value="${esc(n)}"></option>`).join('');
+    dl.innerHTML = [...new Set([...names, ...buildSuggestions().flies])]
+      .map((n) => `<option value="${esc(n)}"></option>`).join('');
   }
 
   function wireForm(s) {
@@ -225,7 +331,7 @@
         b.setAttribute('aria-pressed', String(on));
       });
       document.getElementById('rig-fields').innerHTML = rigFields(formType, readRig());
-      document.getElementById('weather-extra').innerHTML = weatherExtra(formType, readWeatherExtra());
+      document.getElementById('weather-extra').innerHTML = weatherExtra(formType, readWeatherExtra(), val('f-date'));
       document.getElementById('flies-title').textContent = formType === 'fly' ? 'Flies' : 'Lures / bait';
     });
 
@@ -236,15 +342,36 @@
       document.getElementById('catch-list').insertAdjacentHTML('beforeend', catchBlock());
     });
 
-    app.addEventListener('input', (e) => {
+    // Delegate to the form (recreated each render) — listeners on the
+    // persistent #app element would accumulate across renders.
+    form.addEventListener('input', (e) => {
       if (e.target.classList.contains('r-name')) refreshHitOptions();
     });
-    app.addEventListener('click', (e) => {
+    form.addEventListener('click', (e) => {
       if (e.target.classList.contains('rm')) {
         const block = e.target.closest('.catch-block') || e.target.closest('.repeat-row');
         block.remove();
       }
     });
+
+    // Keep the auto-suggested moon phase in step with the date; a manual pick sticks.
+    document.getElementById('f-date').addEventListener('change', () => {
+      const sel = document.getElementById('w-moon');
+      if (sel && autoMoon && sel.value === autoMoon) {
+        autoMoon = moonPhase(val('f-date'));
+        sel.value = autoMoon;
+      }
+    });
+
+    const repeat = document.getElementById('repeat-last');
+    if (repeat) {
+      repeat.addEventListener('click', () => {
+        const src = sessions.find((x) => x.type === formType) || sessions[0];
+        if (src) { renderLog(prefillFrom(src)); toast('Setup copied from your last session'); }
+      });
+    }
+
+    wireConditionsButton();
 
     if (editingId) {
       document.getElementById('cancel-edit').addEventListener('click', () => { editingId = null; renderLog(); });
@@ -288,6 +415,7 @@
         flow: ex.flow, hatch: ex.hatch, tide: ex.tide, moon: ex.moon,
       },
       rig: readRig(), flies, catches, reflection: val('f-reflection'),
+      coords: formCoords,
     };
 
     if (id) {
@@ -300,6 +428,119 @@
     save(sessions);
     editingId = null;
     switchView('journal');
+  }
+
+  /* ============================================================
+     CONDITIONS AUTOFILL  (network — degrades quietly offline)
+  ============================================================ */
+  function getPosition() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) { reject(new Error('unsupported')); return; }
+      navigator.geolocation.getCurrentPosition(
+        (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+        reject,
+        { timeout: 10000, maximumAge: 300000 }
+      );
+    });
+  }
+
+  function wmoText(code) {
+    if (code === 0) return 'Clear';
+    if (code <= 2) return 'Partly cloudy';
+    if (code === 3) return 'Overcast';
+    if (code === 45 || code === 48) return 'Fog';
+    if (code >= 51 && code <= 57) return 'Drizzle';
+    if (code >= 61 && code <= 67) return 'Rain';
+    if (code >= 71 && code <= 77) return 'Snow';
+    if (code >= 80 && code <= 82) return 'Showers';
+    if (code === 85 || code === 86) return 'Snow showers';
+    if (code >= 95) return 'Thunderstorm';
+    return '';
+  }
+  const compass = (deg) =>
+    ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round((((deg % 360) + 360) % 360) / 45) % 8];
+
+  // Open-Meteo: keyless, CORS-enabled. Pressure trend = now vs ~3h ago.
+  async function fetchConditions({ lat, lon }) {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}` +
+      '&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl' +
+      '&hourly=pressure_msl&past_hours=6&forecast_hours=1' +
+      '&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`weather ${res.status}`);
+    const d = await res.json();
+    const cur = d.current || {};
+    const hp = (d.hourly && d.hourly.pressure_msl) || [];
+    let pressure = '';
+    if (hp.length >= 4 && hp[hp.length - 1] != null && hp[hp.length - 4] != null) {
+      const delta = hp[hp.length - 1] - hp[hp.length - 4];
+      pressure = delta > 1 ? 'Rising' : delta < -1 ? 'Falling' : 'Steady';
+    }
+    return {
+      airTemp: cur.temperature_2m != null ? String(Math.round(cur.temperature_2m)) : '',
+      condition: cur.weather_code != null ? wmoText(cur.weather_code) : '',
+      wind: cur.wind_speed_10m != null ? `${compass(cur.wind_direction_10m || 0)} ${Math.round(cur.wind_speed_10m)}mph` : '',
+      pressure,
+    };
+  }
+
+  // USGS instantaneous values: nearest active streamflow gauge within ~10 miles.
+  async function fetchFlow({ lat, lon }) {
+    const bBox = [(lon - 0.15).toFixed(4), (lat - 0.15).toFixed(4), (lon + 0.15).toFixed(4), (lat + 0.15).toFixed(4)].join(',');
+    const res = await fetch(`https://waterservices.usgs.gov/nwis/iv/?format=json&bBox=${bBox}&parameterCd=00060&siteStatus=active`);
+    if (!res.ok) throw new Error(`usgs ${res.status}`);
+    const d = await res.json();
+    const series = (d.value && d.value.timeSeries) || [];
+    let best = null, bestDist = Infinity;
+    series.forEach((ts) => {
+      const g = ts.sourceInfo && ts.sourceInfo.geoLocation && ts.sourceInfo.geoLocation.geogLocation;
+      const v = ts.values && ts.values[0] && ts.values[0].value && ts.values[0].value[0];
+      if (!g || !v || v.value == null || Number(v.value) < 0) return; // -999999 = gauge offline
+      const dist = (g.latitude - lat) ** 2 + (g.longitude - lon) ** 2;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { flow: String(Math.round(Number(v.value))), site: ts.sourceInfo.siteName || '' };
+      }
+    });
+    return best;
+  }
+
+  function wireConditionsButton() {
+    const btn = document.getElementById('wx-fill');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      const label = btn.textContent;
+      btn.textContent = 'Fetching conditions…';
+      try {
+        const pos = await getPosition();
+        formCoords = { lat: +pos.lat.toFixed(4), lon: +pos.lon.toFixed(4) };
+        const tasks = [fetchConditions(pos)];
+        if (formType === 'fly') tasks.push(fetchFlow(pos));
+        const [wx, flow] = await Promise.allSettled(tasks);
+        if (wx.status === 'fulfilled') {
+          const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+          set('w-air', wx.value.airTemp);
+          set('w-condition', wx.value.condition);
+          set('w-wind', wx.value.wind);
+          set('w-pressure', wx.value.pressure);
+        }
+        if (flow && flow.status === 'fulfilled' && flow.value) {
+          const el = document.getElementById('w-flow');
+          if (el && flow.value.flow) el.value = flow.value.flow;
+          const hint = document.getElementById('flow-hint');
+          if (hint && flow.value.site) { hint.textContent = `Flow from ${flow.value.site}`; hint.hidden = false; }
+        }
+        toast(wx.status === 'fulfilled'
+          ? 'Conditions filled — tweak anything that looks off'
+          : 'Weather service unreachable — fill in manually');
+      } catch {
+        toast('Location unavailable — fill in manually');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+    });
   }
 
   /* ============================================================
@@ -348,6 +589,11 @@
       return;
     }
     list.innerHTML = items.map(entryCard).join('');
+    list.querySelectorAll('[data-again]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const src = sessions.find((s) => s.id === b.dataset.again);
+        if (src) { editingId = null; switchView('log', prefillFrom(src)); toast('Setup copied — new session started'); }
+      }));
     list.querySelectorAll('[data-edit]').forEach((b) =>
       b.addEventListener('click', () => { editingId = b.dataset.edit; switchView('log', sessions.find((s) => s.id === editingId)); }));
     list.querySelectorAll('[data-del]').forEach((b) =>
@@ -391,6 +637,7 @@
       ${catchChips ? `<div class="chips">${catchChips}</div>` : `<p class="entry-meta" style="margin-top:10px">No fish recorded.</p>`}
       ${s.reflection ? `<div class="entry-reflection">${esc(s.reflection)}</div>` : ''}
       <div class="entry-actions">
+        <button class="btn ghost sm" data-again="${s.id}">Log again</button>
         <button class="btn ghost sm" data-edit="${s.id}">Edit</button>
         <button class="btn warn sm" data-del="${s.id}">Delete</button>
       </div>
@@ -446,11 +693,19 @@
     const fishInHourSessions = sessions.filter((s) => num(s.hours) > 0).reduce((n, s) => n + s.catches.length, 0);
     const perHour = totalHours > 0 ? (fishInHourSessions / totalHours) : null;
 
+    // Heaviest fish wins; among fish with no weight logged, longest wins.
     let biggest = null;
+    const better = (a, b) => (num(a.weight) !== num(b.weight)
+      ? num(a.weight) > num(b.weight)
+      : num(a.length) > num(b.length));
     sessions.forEach((s) => s.catches.forEach((c) => {
-      const score = num(c.weight) * 100 + num(c.length);
-      if (score > 0 && (!biggest || score > biggest.score)) biggest = { ...c, score };
+      if (num(c.weight) <= 0 && num(c.length) <= 0) return;
+      if (!biggest || better(c, biggest)) biggest = c;
     }));
+    const bestLabel = biggest
+      ? [num(biggest.weight) > 0 && `${esc(biggest.weight)}lb`, num(biggest.length) > 0 && `${esc(biggest.length)}"`]
+          .filter(Boolean).join(' · ')
+      : '—';
 
     const effFlies = fishByCatch((c) => c.hit);
     const spots = fishBySession((s) => s.location || s.water);
@@ -479,7 +734,7 @@
         <div class="stat"><div class="num">${totalFish}</div><div class="lbl">Fish landed</div></div>
         <div class="stat"><div class="num">${catchRate}%</div><div class="lbl">Days with a catch</div></div>
         <div class="stat"><div class="num">${perHour !== null ? perHour.toFixed(1) : '—'}</div><div class="lbl">Fish per hour</div></div>
-        <div class="stat"><div class="num">${biggest ? `${biggest.weight || biggest.length}${biggest.weight ? 'lb' : '"'}` : '—'}</div><div class="lbl">Personal best${biggest && biggest.species ? ` · ${esc(biggest.species)}` : ''}</div></div>
+        <div class="stat"><div class="num">${bestLabel}</div><div class="lbl">Personal best${biggest && biggest.species ? ` · ${esc(biggest.species)}` : ''}</div></div>
       </div>
 
       ${working.length ? `<div class="panel">
@@ -546,7 +801,7 @@
       </div>
       <div class="panel">
         <h3>Import</h3>
-        <p class="hint" style="margin-top:-8px">Load a previously exported JSON file. This <strong>replaces</strong> your current data.</p>
+        <p class="hint" style="margin-top:-8px">Load a previously exported JSON file. New sessions are added and matching ones updated — nothing is deleted.</p>
         <input type="file" id="import-file" aria-label="Choose a Tideline JSON backup to import" accept="application/json" style="margin-top:8px" />
       </div>
       <div class="panel">
@@ -569,8 +824,11 @@
         try {
           const data = JSON.parse(reader.result);
           if (!Array.isArray(data)) throw new Error('bad');
-          if (!confirm(`Import ${data.length} sessions? This replaces your current journal.`)) return;
-          sessions = data; save(sessions); toast('Journal imported'); switchView('journal');
+          if (!confirm(`Import ${data.length} session${data.length === 1 ? '' : 's'}? New ones are added, matching ones updated — nothing is deleted.`)) return;
+          const { merged, added, updated } = mergeSessions(sessions, data);
+          sessions = merged; save(sessions);
+          toast(`Imported: ${added} new, ${updated} updated`);
+          switchView('journal');
         } catch { alert('That file could not be read as a Tideline backup.'); }
       };
       reader.readAsText(file);
@@ -580,6 +838,21 @@
         sessions = []; save(sessions); toast('All data erased'); renderBackup();
       }
     });
+  }
+
+  // Dedupe by id (imported version wins — it's a restore), then keep the
+  // array newest-first, which the prefill features rely on.
+  function mergeSessions(existing, incoming) {
+    const map = new Map(existing.map((s) => [s.id, s]));
+    let added = 0, updated = 0;
+    incoming.forEach((raw) => {
+      const s = normalizeSession(raw);
+      if (map.has(s.id)) updated++; else added++;
+      map.set(s.id, s);
+    });
+    const merged = [...map.values()]
+      .sort((a, b) => ((b.date || '') + (b.time || '')).localeCompare((a.date || '') + (a.time || '')));
+    return { merged, added, updated };
   }
 
   const today = () => new Date().toISOString().slice(0, 10);
@@ -593,7 +866,7 @@
   function toCSV(data) {
     const cols = ['date', 'time', 'hours', 'type', 'location', 'water', 'condition', 'airTemp', 'waterTemp',
       'wind', 'pressure', 'flow', 'hatch', 'tide', 'moon', 'rod', 'reel', 'line', 'leader', 'method',
-      'flies', 'species', 'length', 'weight', 'released', 'caughtOn', 'reflection'];
+      'flies', 'species', 'length', 'weight', 'released', 'caughtOn', 'reflection', 'lat', 'lon'];
     const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const base = (s) => ({
       date: s.date, time: s.time, hours: s.hours, type: s.type, location: s.location, water: s.water,
@@ -602,6 +875,7 @@
       tide: s.weather.tide, moon: s.weather.moon, rod: s.rig.rod, reel: s.rig.reel, line: s.rig.line,
       leader: s.rig.leader, method: s.rig.method, flies: s.flies.map((f) => f.name).join('; '),
       species: '', length: '', weight: '', released: '', caughtOn: '', reflection: s.reflection,
+      lat: s.coords ? s.coords.lat : '', lon: s.coords ? s.coords.lon : '',
     });
     const rows = [];
     data.forEach((s) => {

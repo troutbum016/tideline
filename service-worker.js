@@ -1,6 +1,6 @@
 /* Tideline service worker — offline app shell.
    Bump CACHE when any cached asset changes to force an update. */
-const CACHE = 'tideline-v2';
+const CACHE = 'tideline-v3';
 const ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,8 @@ const ASSETS = [
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/icon-maskable-512.png',
+  './icons/apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (e) => {
@@ -28,6 +30,9 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const { request } = e;
   if (request.method !== 'GET') return;
+
+  // Cross-origin (weather/flow APIs): network-only — never cache live data.
+  if (new URL(request.url).origin !== location.origin) return;
 
   // Navigation requests: serve cached app shell when offline.
   if (request.mode === 'navigate') {

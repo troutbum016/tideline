@@ -25,8 +25,8 @@ Five files do everything; there is no framework.
 
 - **`index.html`** — static shell: header with `#tabs` nav, an empty `<main id="app">`, a `#toast` div, and inline service-worker registration. Contains all the PWA/iOS meta tags.
 - **`app.js`** — the entire app, one IIFE. Each tab is a `renderX()` function that **replaces `app.innerHTML`** with a template string, then wires event listeners on the freshly-created nodes. `switchView(view, payload)` is the router (called by tab clicks and after saves). State lives in module-scoped vars (`view`, `editingId`, `formType`, `journalQuery`, `journalFilter`) — there is no virtual DOM or reactivity; re-render by calling the render function again.
-- **`styles.css`** — warm-light minimalist theme. All colors are CSS vars in `:root` (primary `#C65A4A`, bg `#F7F2EC`, text `#6F655E`). Flat surfaces, hairline borders, no gradients/shadows. `.grid.cols-2/cols-3` collapse to one column under 640px. Inputs use `font-size:16px` to stop iOS zoom-on-focus; `env(safe-area-inset-*)` handles the notch.
-- **`service-worker.js`** — offline app-shell cache. Navigations are network-first → cached `index.html`; other GETs are cache-first → network. Precaches the asset list in `ASSETS`.
+- **`styles.css`** — warm-light minimalist "tide table & field ledger" theme. All colors are CSS vars in `:root` (primary tide-teal `#2E6E73`, fly-signal terracotta `#C65A4A`, bg `#F4EFE6`). Flat surfaces, hairline borders, no gradients/shadows. `.grid.cols-2/cols-3` collapse to one column under 640px. Inputs use `font-size:16px` to stop iOS zoom-on-focus; `env(safe-area-inset-*)` handles the notch. Non-Basics Log-form panels are native `<details class="panel">` with a `.panel-sum` summary of filled values.
+- **`service-worker.js`** — offline app-shell cache. Navigations are network-first → cached `index.html`; **cross-origin GETs (weather/flow APIs) are ignored entirely — never cache live data**; other same-origin GETs are cache-first → network. Precaches the asset list in `ASSETS`.
 - **`manifest.json`** + **`icons/`** — PWA manifest and icons. `icons/icon.svg` is the source; PNGs are generated from it.
 
 ### Data model
@@ -37,8 +37,11 @@ One key: `localStorage['tideline.sessions.v1']` → a JSON array of session obje
 session = { id, type:'fly'|'saltwater', date, time, hours, location, water,
   weather:{condition,airTemp,waterTemp,wind,pressure,flow,hatch,tide,moon},
   rig:{rod,reel,line,leader,method}, flies:[{name,size}],
-  catches:[{species,length,weight,released,hit}], reflection }
+  catches:[{species,length,weight,released,hit}], reflection,
+  coords:{lat,lon}|null }   // set by "Use current conditions"; never rendered
 ```
+
+`normalizeSession(raw)` fills defaults for any missing keys — it runs in `load()` and on import (`mergeSessions`), so old backups always stay loadable. When adding a session field, add its default there too. Import **merges** by id (imported wins); it never deletes.
 
 `hit` = the fly/lure that caught that fish ("caught on"). This field is the backbone of Insights — **changing it breaks effectiveness analytics**. Fields are stored as trimmed strings (numbers included); coerce with the `num()` helper when computing.
 
@@ -52,7 +55,14 @@ Time of day comes from `timeOfDay(hhmm)`, which buckets into Dawn/Morning/Midday
 
 ### Type-aware forms
 
-`type` (`fly` vs `saltwater`) swaps parts of the Log form: `rigFields()` (fly: rod weight/line/leader/presentation; salt: rod/reel/line/rig) and `weatherExtra()` (fly: flow/hatch; salt: tide/moon selects). The `#type-seg` toggle re-renders just those sub-sections in place. The "caught on" `<datalist id="hit-options">` is populated by `refreshHitOptions()` from the flies the user entered.
+`type` (`fly` vs `saltwater`) swaps parts of the Log form: `rigFields()` (fly: rod weight/line/leader/presentation; salt: rod/reel/line/rig) and `weatherExtra()` (fly: flow/hatch; salt: tide/moon selects). The `#type-seg` toggle re-renders just those sub-sections in place. The "caught on" `<datalist id="hit-options">` is populated by `refreshHitOptions()` from the flies the user entered plus past sessions' patterns.
+
+### Automation & suggestions
+
+- **Datalists are derived, not stored**: `buildSuggestions()` scans `sessions` at render time for past locations/waters/species/flies/rig values; `renderLog()` emits `<datalist id="dl-*">` blocks inside the form.
+- **"Use current conditions"** (`wireConditionsButton()`): geolocation → Open-Meteo (weather, keyless) + USGS NWIS (streamflow, fly only, nearest gauge in a ±0.15° box) via `Promise.allSettled`. Every failure path is a quiet toast; manual entry always works offline. Coords are stashed in `formCoords` and saved on the session.
+- **Moon phase** is computed locally in `moonPhase(date)` (synodic-month math, no network) and preselected for saltwater; `autoMoon` tracks the suggestion so a manual pick is never clobbered on date change.
+- **Prefill**: `prefillFrom(session)` copies type/location/water/rig/flies into a fresh session (new id on save) — used by Journal "Log again" and the form's "Repeat last setup" link.
 
 ## Conventions
 

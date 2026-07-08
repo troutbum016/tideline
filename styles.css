@@ -202,6 +202,42 @@ main {
   opacity: 0.55;
 }
 
+/* Collapsible form panels — native <details>, same ledger look. */
+details.panel > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary h3 { margin: 0; flex: none; }
+details.panel[open] > summary { margin-bottom: 16px; }
+/* Thin +/− toggle mark in the data voice, right-aligned. */
+details.panel > summary::after {
+  content: "+";
+  margin-left: 10px;
+  color: var(--muted);
+  font-family: var(--font-data);
+  font-size: 15px;
+  line-height: 1;
+  flex: none;
+}
+details.panel[open] > summary::after { content: "\2212"; margin-left: auto; }
+details.panel > summary:focus-visible { outline: none; box-shadow: var(--ring); border-radius: 8px; }
+/* Collapsed panels echo their filled values so nothing is hidden. */
+.panel-sum {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-family: var(--font-data);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+details.panel[open] > summary .panel-sum { display: none; }
+
 .grid { display: grid; gap: 14px; }
 .grid.cols-2 { grid-template-columns: 1fr 1fr; }
 .grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
